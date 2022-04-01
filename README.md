@@ -88,9 +88,10 @@ Is `true`, when a white halo line should be drawn for better visual differentiat
 
 The labels can all be aligned at the left/right edge of the diagram (`alignLabels = true`) or at the nearer distance to the circle, depending on the text length (`alignLabels = false`).
 
+|:---:|:---:|
+| <img src="images/alignLabels_false.png" width="350"> | <img src="images/default2.png" width="350"> |
+| alignLabels: false | alignLabels: true |
 
-<div style="float: left; text-align:center;"><img src="images/alignLabels_false.png" width="350"><br/><b>alignLabels: false</b></div>
-<div style="text-align:center;"><img src="images/default2.png" width="350"><br/><b>alignLabels: true</b></div>
 
 ### showDebugInfos
 
