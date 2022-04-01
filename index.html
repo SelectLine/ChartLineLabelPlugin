@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <title>PieLabel13</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+</head>
+
+<body>
+  <div style="width: 97%; margin: auto;">
+    <canvas id="myChart"></canvas>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const baseColors = ['#a26d97', '#e3a711', '#55a0d3', '#93b856', '#c56055', '#406685', '#a26d97', '#e3a711', '#55a0d3', '#93b856', '#c56055', '#406685', '#a26d97', '#e3a711', '#55a0d3', '#93b856', '#c56055', '#406685'];
+
+    const data = {
+      labels: [
+        'January is a very very long label with a lot of text',
+        'February is short but the label text is longer',
+        'March',
+        'April',
+        'May',
+        'June',
+        'July',
+        'August',
+        'September',
+        'October',
+        'November',
+        'December'
+      ],
+      datasets: [
+        {
+          label: "# of Votes",
+          data: [20, 10, 26, 9, 16, 21, 10, 12, 10, 5, 3, 10],
+          backgroundColor: baseColors
+        }
+      ]
+    };
+
+
+    const options = {
+      layout: {
+        padding: {
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0
+        }
+      },
+      plugins: {
+        chartLineLabelPlugin: {
+          labelSpace: 120,
+          //labelSpacePercent: 15,
+          lineHeightFactor: 1.2,
+          anchorCenterPercent: 100,
+          font: "12px 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif",
+          color: 'gray',
+          edgePadding: 25,
+          halo: true,
+          alignLabels: false,
+          showDebugInfos: false
+        },
+        legend: {
+          display: true
+        },
+      }
+    };
+
+    const chartAreaBorder = {
+      id: 'chartAreaBorder',
+      afterDraw(chart, args, options) {
+        const { ctx, chartArea: { left, top, width, height } } = chart;
+        ctx.save();
+        ctx.strokeStyle = options.borderColor;
+        ctx.lineWidth = options.borderWidth;
+        ctx.setLineDash(options.borderDash || []);
+        ctx.lineDashOffset = options.borderDashOffset;
+        //ctx.strokeRect(left, top, width, height);
+        ctx.restore();
+      }
+    };
+
+    const chartLineLabelPlugin = {
+      id: 'chartLineLabelPlugin',
+
+      resize(chart) {
+        //Get the plugin options or default values
+        const options = getPluginOptions(chart);
+
+        // Check if plugin is enabled
+        const display = options.display;
+        if (display === false) {
+          return;
+        }
+
+        const labelSpace = getLabelSpace(chart, options);
+        //This overwrites the original padding
+        chart.options.layout.padding.left = labelSpace;
+        chart.options.layout.padding.right = labelSpace;        
+      },
+
+
+      afterDraw: (chart) => {
+        //Get the plugin options or default values
+        const options = getPluginOptions(chart);
+
+        // Check if plugin is enabled
+        const display = options.display;
+        if (display === false) {
+          return;
+        }
+
+        if (chart.config.data.labels === undefined || chart.config.data.labels.size === 0) {
+          return;
+        }
+
+        // Grab the necessarry values from the chart
+        const { ctx, chartArea: { top, bottom, left, right, width, height }, scales: { x, y } } = chart;
+        ctx.font = options.font;
+
+        const lineHeightInPixel = getLineHeightInPixel(ctx, options.lineHeightFactor);
+
+        const chartCenterPoint = {
+          x: (chart.chartArea.right - chart.chartArea.left) / 2 + chart.chartArea.left,
+          y: (chart.chartArea.bottom - chart.chartArea.top) / 2 + chart.chartArea.top
+        };
+
+        let [allLabels, radius] = calculateCoordinates(chart, chartCenterPoint, options);
+
+        //Y-Value for line zero
+        let lineZeroY = chartCenterPoint.y - (radius + lineHeightInPixel);
+        if (chartCenterPoint.y - radius < chart.chartArea.top) {
+          lineZeroY += lineHeightInPixel;
+        }
+
+        allLabels = calculateLineNumbers(
+          allLabels,
+          lineHeightInPixel,
+          lineZeroY,
+          'left',
+          chartCenterPoint,
+          radius,
+          chart.chartArea.height);
+
+        allLabels = calculateLineNumbers(
+          allLabels,
+          lineHeightInPixel,
+          lineZeroY,
+          'right',
+          chartCenterPoint,
+          radius,
+          chart.chartArea.height);
+
+        drawLabels(allLabels, ctx, chartCenterPoint, options);
+      }
+    };
+
+    const calculateCoordinates = (chart, chartCenterPoint, pluginOptions) => {
+      const allLabels = [];
+      let model = {};
+      let radius = 0;
+      //Iterate all labels and calculate their coordinates
+      chart.config.data.labels.forEach((label, i) => {
+        // Do not calc and draw the label if it hidden by legend striketrough
+        if (chart.legend.legendItems[i].hidden === true) {
+          return;
+        }
+        const meta = chart.getDatasetMeta(0);
+        model = meta.data[i];
+        if (model === undefined) {
+          return;
+        }
+
+        const dataset = chart.config.data.datasets[0];
+
+        radius = model.outerRadius + pluginOptions.edgePadding;
+
+        // Prepare data to draw
+        // important point 1
+        const centerPoint = model.getCenterPoint();
+        const color = pluginOptions.color;
+        const labelColor = pluginOptions.color;
+
+        const angle = Math.atan2(
+          centerPoint.y - chartCenterPoint.y,
+          centerPoint.x - chartCenterPoint.x
+        );
+
+        const point2X = chartCenterPoint.x + Math.cos(angle) * (radius);
+        const point2Y = chartCenterPoint.y + Math.sin(angle) * (radius);
+
+        //Modify centerPoint with pluginOptions.anchorCenterPercent
+        centerPoint.x = chartCenterPoint.x + Math.cos(angle) * (model.outerRadius * pluginOptions.anchorCenterPercent / 100);
+        centerPoint.y = chartCenterPoint.y + Math.sin(angle) * (model.outerRadius * pluginOptions.anchorCenterPercent / 100);
+
+        let direction;
+        if (point2X < chartCenterPoint.x) {
+          direction = 'left';
+        } else {
+          direction = 'right';
+        }
+
+        let value = dataset.data[i];
+        if (dataset.polyline && dataset.polyline.formatter) {
+          value = dataset.polyline.formatter(value);
+        }
+
+        const labelSpace = getLabelSpace(chart, pluginOptions);
+        const somethingLikeDistanceToCenter = model.outerRadius + labelSpace;
+
+        const edgePointX =
+          point2X < chartCenterPoint.x
+            ? chartCenterPoint.x - somethingLikeDistanceToCenter
+            : chartCenterPoint.x + somethingLikeDistanceToCenter;
+
+        if (pluginOptions.formatter !== undefined) {
+          label = pluginOptions.formatter(value, chart.config.data.labels, i, chart.config.data.datasets);
+        }
+
+        allLabels.push({
+          centerPoint,
+          edgePointX,
+          point2X,
+          point2Y,
+          labelColor,
+          color,
+          label,
+          direction,
+          lineNumber: 0
+        });
+      });
+
+      return [allLabels, radius];
+    };
+
+    const calculateLineNumbers = (labels, lineHeightInPixel, lineZeroY, direction, chartCenter, radius, maxHeight) => {
+      // Caculate the line numbers by pointY2 - pointY2 is a point without crossing lines - thus, the labels must not change in order.
+      // Sort lines by y-Coordinate
+      labels.sort((a, b) => (a.point2Y > b.point2Y) ? 1 : ((b.point2Y > a.point2Y) ? -1 : 0));
+      let initialLineNumber = 0;
+      const maxLine = Math.floor(maxHeight / lineHeightInPixel);
+      labels.forEach((item) => {
+        if (item.direction === direction) {
+          let proposedLineNumber = Math.ceil((item.point2Y - lineZeroY) / lineHeightInPixel);
+          if (proposedLineNumber > maxLine) {
+            proposedLineNumber = maxLine;
+          }
+          while (proposedLineNumber <= initialLineNumber) {
+            proposedLineNumber++;
+          }
+          item.lineNumber = proposedLineNumber;
+          initialLineNumber = proposedLineNumber;
+        }
+      });
+
+      labels.forEach((item) => {
+        if (item.direction === direction) {
+          item.point2Y = lineZeroY + item.lineNumber * lineHeightInPixel;
+
+          // Now that Y is new - we need to recalc x,
+          const diffY = chartCenter.y - item.point2Y;
+          const diffX = Math.sqrt(Math.abs((radius * radius) - (diffY * diffY)));
+          if (direction === 'left') {
+            item.point2X = chartCenter.x - diffX;
+          }
+          else {
+            item.point2X = chartCenter.x + diffX;
+          }
+        }
+      });
+
+      return labels;
+    };
+
+    const drawLabels = (labels, ctx, chartCenterPoint, options) => {
+      labels.forEach((item) => {
+
+        // Add line number for debug
+        if (options.showDebugInfos) {
+          item.label += '/' + item.lineNumber;
+        }
+
+        const labelText = shortenLabelText(ctx, item.label, Math.abs(item.point2X - item.edgePointX));
+
+        // Correct the edgePointX, if labels are not aligned
+        if (!options.alignLabels) {
+          const labelWidth = ctx.measureText(labelText).width;
+          if (item.direction === 'left') {
+            item.edgePointX = item.point2X - labelWidth;
+          }
+          else {
+            item.edgePointX = item.point2X + labelWidth;
+          }
+        }
+
+        // first line: connect between arc's center point and outside point
+        if (options.halo) {
+          drawLine(ctx, item.centerPoint.x, item.centerPoint.y, item.point2X, item.point2Y, 'white', 3);
+        }
+        drawLine(ctx, item.centerPoint.x, item.centerPoint.y, item.point2X, item.point2Y, item.color, 1);
+
+        // second line: connect between outside point and chart's edge
+        if (options.halo) {
+          drawLine(ctx, item.point2X, item.point2Y, item.edgePointX, item.point2Y, 'white', 3);
+        }
+        drawLine(ctx, item.point2X, item.point2Y, item.edgePointX, item.point2Y, item.color, 1);
+
+        //fill custom label
+        const labelAlignStyle = item.edgePointX < chartCenterPoint.x ? 'left' : 'right';
+        const labelX = item.edgePointX;
+        const labelY = item.point2Y;
+        ctx.textAlign = labelAlignStyle;
+        ctx.textBaseline = 'bottom';
+
+        ctx.fillStyle = item.labelColor;
+        ctx.fillText(labelText, labelX, labelY - 2); // 2 = Distance from line to text
+      });
+      ctx.restore();
+    };
+
+    const drawLine = (ctx, x1, y1, x2, y2, color, width) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    };
+
+    const getLabelSpace = (chart, pluginOptions) => {
+      let labelSpace = pluginOptions.labelSpace;
+      if (labelSpace === undefined) {
+        const labelSpacePercent = pluginOptions.labelSpacePercent;
+        if (labelSpacePercent === undefined) {
+          labelSpace = 250; // Default value if nothing is set
+        }
+        else {
+          labelSpace = chart.width * labelSpacePercent / 100;
+        }
+      }
+      return labelSpace;
+    };
+
+    const shortenLabelText = (ctx, labelText, maxWidth) => {
+      let length = ctx.measureText(labelText).width;
+      if (length > maxWidth) {
+        while (length > maxWidth && labelText.length > 3) {
+          labelText = labelText.substring(0, labelText.length - 1);
+          length = ctx.measureText(labelText + '...').width;
+        }
+        labelText = labelText + '...';
+      }
+      return labelText;
+    };
+
+    const getLineHeightInPixel = (ctx, lineHeightFactor) => {
+      // You can get a very close approximation of the vertical height by checking the length of a capital M.
+      const height = ctx.measureText('M').width;
+      return height * lineHeightFactor * 2;
+    };
+
+    const getPluginOptions = (chart) => {
+      //Default values
+      let display = false;
+      let labelSpace = undefined;
+      let labelSpacePercent = undefined;
+      let lineHeightFactor = 1.2;
+      let formatter = undefined;
+      let anchorCenterPercent = 50;
+      let font = '13px \'Helvetica Neue\', \'Helvetica\', \'Arial\', sans-serif';
+      let color = 'gray';
+      let edgePadding = 15;
+      let halo = false;
+      let alignLabels = true;
+      let showDebugInfos = false;
+
+      const pluginOptions = chart.config.options.plugins.chartLineLabelPlugin;
+      if (pluginOptions !== undefined) {
+        if (pluginOptions.display !== undefined) {
+          display = pluginOptions.display;
+        }
+        else {
+          display = true;
+        }
+        if (pluginOptions.labelSpace !== undefined) {
+          labelSpace = pluginOptions.labelSpace;
+        }
+        if (pluginOptions.labelSpacePercent !== undefined) {
+          labelSpacePercent = pluginOptions.labelSpacePercent;
+        }
+        if (pluginOptions.lineHeightFactor !== undefined) {
+          lineHeightFactor = pluginOptions.lineHeightFactor;
+        }
+        if (pluginOptions.formatter !== undefined) {
+          formatter = pluginOptions.formatter;
+        }
+        if (pluginOptions.anchorCenterPercent !== undefined) {
+          anchorCenterPercent = pluginOptions.anchorCenterPercent;
+        }
+        if (pluginOptions.font !== undefined) {
+          font = pluginOptions.font;
+        }
+        if (pluginOptions.color !== undefined) {
+          color = pluginOptions.color;
+        }
+        if (pluginOptions.edgePadding !== undefined) {
+          edgePadding = pluginOptions.edgePadding;
+        }
+        if (pluginOptions.halo !== undefined) {
+          halo = pluginOptions.halo;
+        }
+        if (pluginOptions.alignLabels !== undefined) {
+          alignLabels = pluginOptions.alignLabels;
+        }
+        if (pluginOptions.showDebugInfos !== undefined) {
+          showDebugInfos = pluginOptions.showDebugInfos;
+        }
+      }
+
+      return {
+        display,
+        labelSpace,
+        labelSpacePercent,
+        lineHeightFactor,
+        formatter,
+        anchorCenterPercent,
+        font,
+        color,
+        edgePadding,
+        halo,
+        alignLabels,
+        showDebugInfos
+      }
+    };
+
+
+    const config = {
+      type: 'pie',
+      data: data,
+      options: options,
+      plugins: [chartLineLabelPlugin, chartAreaBorder]
+    };
+
+
+    const myChart = new Chart(document.getElementById('myChart'), config);
+
+  </script>
+
+</body>
+
+</html>
